@@ -13,8 +13,8 @@ from core.providers import OpenAIProvider
 from core.types.ai import AIRequest
 from core.types.chat import ChatDialog, ChatEntry
 
-from ..chat import ChatBubble
-from ...css import APPLICATION_THEME
+from core.ui.components.chat import ChatBubble
+from core.ui.css import APPLICATION_THEME
 
 
 def _now_hhmm() -> str:

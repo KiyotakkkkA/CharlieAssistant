@@ -1,10 +1,10 @@
 import argparse
 
-from .general import Config
-from .providers import OpenAIProvider
-from .ui.components.chat import CharlieChatApp
-from .types.ai import AIRequest
-from .exeptions import NoPortError
+from core.general import Config
+from core.providers import OpenAIProvider
+from core.ui.components.chat import CharlieChatApp
+from core.types.ai import AIRequest
+from core.exeptions import NoPortError
 
 class App:
     def __init__(self, args: argparse.Namespace) -> None:

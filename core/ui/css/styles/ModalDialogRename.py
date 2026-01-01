@@ -1,4 +1,4 @@
-from ..CSS import CSSBlock
+from core.ui.css.CSS import CSSBlock
 
 MODAL_DIALOG_RENAME_CSS_BLOCK = CSSBlock(
     """

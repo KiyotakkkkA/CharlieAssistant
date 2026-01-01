@@ -1,4 +1,4 @@
-from .ASCIIDrawer import ASCIIDrawer
+from core.ui.components.general.ASCIIDrawer import ASCIIDrawer
 
 __all__ = [
     "ASCIIDrawer",

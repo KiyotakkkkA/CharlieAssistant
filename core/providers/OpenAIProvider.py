@@ -1,10 +1,12 @@
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
+
 from typing import Generator
+
 from core.general import Config
-from core.exeptions import NoClientError, NoModelError
+from core.exeptions import NoClientError
 from core.types.ai import AIChunk
-from .BaseAIProvider import BaseAIProvider
+from core.providers.BaseAIProvider import BaseAIProvider
 
 class OpenAIProvider(BaseAIProvider):
     def __init__(self, config: Config):

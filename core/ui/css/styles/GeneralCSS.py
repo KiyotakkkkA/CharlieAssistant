@@ -1,4 +1,4 @@
-from ..CSS import CSSBlock
+from core.ui.css.CSS import CSSBlock
 
 GENERAL_CSS_BLOCK = CSSBlock(
     """

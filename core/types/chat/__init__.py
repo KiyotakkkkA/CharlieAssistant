@@ -1,5 +1,5 @@
-from .Chat import ChatMessage
-from .Dialog import ChatDialog, ChatEntry
+from core.types.chat.Chat import ChatMessage
+from core.types.chat.Dialog import ChatDialog, ChatEntry
 
 __all__ = [
     "ChatMessage",
