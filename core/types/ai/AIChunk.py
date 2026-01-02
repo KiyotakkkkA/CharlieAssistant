@@ -1,6 +1,7 @@
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict, TypeAlias
 
 from openai.types.responses import ResponseStreamEvent
+from ollama import ChatResponse
 
 
 class FunctionCallItem(TypedDict, total=False):
@@ -24,3 +25,18 @@ class OpenRouterAIResponseChunk(TypedDict, total=False):
     tool_call_arguments: NotRequired[str]
 
     tool_event: NotRequired[dict]
+
+
+class OllamaAIResponseChunk(TypedDict, total=False):
+    event: ChatResponse | Any
+    event_type: str
+
+    ai_content_part: NotRequired[str]
+
+    tool_call: NotRequired[FunctionCallItem]
+    tool_call_index: NotRequired[int]
+
+    tool_event: NotRequired[dict]
+
+
+AIResponseChunk: TypeAlias = OpenRouterAIResponseChunk | OllamaAIResponseChunk

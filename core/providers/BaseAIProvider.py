@@ -2,10 +2,13 @@ from typing import Generator
 
 from openai.types.responses import ResponseInputParam
 
-from core.types.ai import OpenRouterAIResponseChunk
+from core.types.ai import AIResponseChunk
 
 
 class BaseAIProvider:
+
+    REQUIRES_API_KEY: bool = True
+    REQUIRES_API_BASE: bool = True
 
     def __init__(self, api_key: str, api_base: str) -> None:
         self.api_key = api_key
@@ -16,12 +19,14 @@ class BaseAIProvider:
         self._provider_setup()
 
     def _provider_setup(self):
-        if not self.api_key or not self.api_base: 
-            raise ValueError("API key или API base не были установлены")
+        if self.REQUIRES_API_BASE and not self.api_base:
+            raise ValueError("API base не был установлен")
+        if self.REQUIRES_API_KEY and not self.api_key:
+            raise ValueError("API key не был установлен")
         
         return self.provider_setup()
     
-    def generate_response(self, messages: ResponseInputParam , **kwargs) -> Generator[OpenRouterAIResponseChunk, None, None]:
+    def generate_response(self, messages: ResponseInputParam , **kwargs) -> Generator[AIResponseChunk, None, None]:
         raise NotImplementedError("This method should be implemented by subclasses.")
     
     def provider_setup(self):

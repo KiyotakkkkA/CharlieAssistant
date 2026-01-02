@@ -1,4 +1,4 @@
-from core.types.ai.AIChunk import OpenRouterAIResponseChunk
+from core.types.ai.AIChunk import AIResponseChunk, OllamaAIResponseChunk, OpenRouterAIResponseChunk
 from core.types.ai.AIRequest import AIRequest
 from core.types.ai.AITools import (
     ToolFunctionParamsObject,
@@ -16,6 +16,8 @@ from core.types.ai.AIAssistant import (
 )
 
 __all__ = [
+    "AIResponseChunk",
+    "OllamaAIResponseChunk",
     "OpenRouterAIResponseChunk",
     "AIRequest",
     "ToolFunctionParamsObject",

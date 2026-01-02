@@ -7,9 +7,9 @@ from typing import Any, Callable, Dict, Generator, List, Type, cast
 from openai.types.responses import ResponseInputParam 
 
 from core.general import Config
-from core.providers import OpenAIProvider
+from core.providers import OpenAIProvider, OllamaAIProvider
 from core.types.ai import (
-    OpenRouterAIResponseChunk,
+    AIResponseChunk,
     AIRequest,
     ToolClassProtocol,
     ToolObject,
@@ -33,6 +33,7 @@ class Assistant:
 
         self.providers: AIProviders = {
             'openrouter': ("OpenAIProvider", OpenAIProvider, self._openrouter_generate_response, 'flat'),
+            'ollama': ("OllamaAIProvider", OllamaAIProvider, self._ollama_generate_response, 'normal'),
         }
 
         self.request_params: AIRequest = {
@@ -78,21 +79,21 @@ class Assistant:
         messages: ResponseInputParam | None = None,
         user_text: str = "",
         **kwargs,
-    ) -> Generator[OpenRouterAIResponseChunk, None, None]:
+    ) -> Generator[AIResponseChunk, None, None]:
 
         base_messages: ResponseInputParam = list(messages) if messages is not None else [
             {"role": "user", "content": user_text}
         ]
 
         def _emit(ev: dict) -> None:
-            yield_chunk: OpenRouterAIResponseChunk = {
+            yield_chunk: AIResponseChunk = {
                 "event": ev,
                 "event_type": str(ev.get("type") or "tool_event"),
                 "tool_event": ev,
             }
             nonlocal_yields.append(yield_chunk)
 
-        nonlocal_yields: List[OpenRouterAIResponseChunk] = []
+        nonlocal_yields: List[AIResponseChunk] = []
 
         while True:
             assistant_content_parts: List[str] = []
@@ -244,6 +245,152 @@ class Assistant:
                         "output": tool_output,
                     }
                 )
+
+    def _ollama_generate_response(
+        self,
+        *,
+        messages: ResponseInputParam | None = None,
+        user_text: str = "",
+        **kwargs,
+    ) -> Generator[AIResponseChunk, None, None]:
+        if messages is not None:
+            base_messages: list[dict[str, Any]] = [
+                cast(dict[str, Any], m) for m in list(messages) if isinstance(m, dict)
+            ]
+        else:
+            base_messages = [{"role": "user", "content": user_text}]
+
+        def _emit(ev: dict) -> None:
+            yield_chunk: AIResponseChunk = {
+                "event": ev,
+                "event_type": str(ev.get("type") or "tool_event"),
+                "tool_event": ev,
+            }
+            nonlocal_yields.append(yield_chunk)
+
+        nonlocal_yields: List[AIResponseChunk] = []
+
+        while True:
+            assistant_content_parts: List[str] = []
+            tool_calls_acc: Dict[int, Dict[str, Any]] = {}
+
+            request_kwargs: dict[str, Any] = {
+                **self.request_params,
+                **kwargs,
+            }
+            request_kwargs["tools"] = self.tools
+
+            for chunk in self.provider.generate_response(
+                messages=cast(Any, base_messages),
+                **request_kwargs,
+            ):
+                if nonlocal_yields:
+                    for y in nonlocal_yields:
+                        yield y
+                    nonlocal_yields.clear()
+
+                yield chunk
+
+                if chunk.get("ai_content_part"):
+                    assistant_content_parts.append(str(chunk.get("ai_content_part") or ""))
+
+                tool_call = chunk.get("tool_call")
+                tool_call_index = chunk.get("tool_call_index")
+                if isinstance(tool_call_index, int) and isinstance(tool_call, dict):
+                    current = tool_calls_acc.get(tool_call_index)
+                    if current is None:
+                        current = {
+                            "name": tool_call.get("name") or "",
+                            "arguments": tool_call.get("arguments") or "{}",
+                        }
+                        tool_calls_acc[tool_call_index] = current
+                    else:
+                        name = tool_call.get("name")
+                        if isinstance(name, str) and name:
+                            current["name"] = name
+                        args_text = tool_call.get("arguments")
+                        if isinstance(args_text, str) and args_text:
+                            current["arguments"] = args_text
+
+            if nonlocal_yields:
+                for y in nonlocal_yields:
+                    yield y
+                nonlocal_yields.clear()
+
+            assistant_content = "".join(assistant_content_parts)
+            tool_calls = [(i, tool_calls_acc[i]) for i in sorted(tool_calls_acc.keys())]
+
+            if assistant_content.strip() or tool_calls:
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": assistant_content,
+                }
+
+                if tool_calls:
+                    calls_payload: list[dict[str, Any]] = []
+                    for idx, tc in tool_calls:
+                        tool_name = str((tc.get("name") or "")).strip()
+                        raw_args = tc.get("arguments") or "{}"
+
+                        args_dict: dict[str, Any]
+                        try:
+                            parsed = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else {}
+                            args_dict = parsed if isinstance(parsed, dict) else {}
+                        except Exception:
+                            args_dict = {}
+
+                        calls_payload.append(
+                            {
+                                "type": "function",
+                                "function": {
+                                    "index": idx,
+                                    "name": tool_name,
+                                    "arguments": args_dict,
+                                },
+                            }
+                        )
+
+                    assistant_msg["tool_calls"] = calls_payload
+
+                base_messages.append(assistant_msg)
+
+            if not tool_calls:
+                break
+
+            for idx, tc in tool_calls:
+                tool_name = str((tc.get("name") or "")).strip()
+                raw_args = tc.get("arguments") or "{}"
+
+                call_args: dict[str, Any]
+                try:
+                    parsed = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else {}
+                    call_args = parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    call_args = {}
+
+                _emit({"type": "tool_call", "name": tool_name, "arguments": raw_args, "index": idx})
+
+                handler = self._tool_handlers.get(tool_name)
+                result_obj: Any
+                duration_ms = 0
+                if handler is None:
+                    result_obj = {"error": f"Unknown tool: {tool_name}"}
+                else:
+                    t0 = time.perf_counter()
+                    try:
+                        result_obj = handler(**call_args)
+                    except Exception as exc:
+                        result_obj = {"error": f"{type(exc).__name__}: {exc}"}
+                    duration_ms = int((time.perf_counter() - t0) * 1000)
+
+                _emit({"type": "tool_result", "name": tool_name, "result": result_obj, "duration_ms": duration_ms, "index": idx})
+
+                try:
+                    tool_content = json.dumps(result_obj, ensure_ascii=False)
+                except Exception:
+                    tool_content = str(result_obj)
+
+                base_messages.append({"role": "tool", "tool_name": tool_name, "content": tool_content})
     
     def load_tools(self, mode: AllowedAIToolTypes) -> None:
         for tool_class in self.tools_classes:

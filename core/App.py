@@ -17,7 +17,7 @@ class App:
             raise ValueError("Нельзя одновременно использовать режим TUI и фоновый режим работы.")
 
     def run(self) -> None:
-        assistant = Assistant().with_provider('openrouter').with_model('mistralai/devstral-2512:free')
+        assistant = Assistant().with_provider('ollama').with_model('gpt-oss:20b')
 
         if self.tui_mode:
             self._run_tui_mode(assistant)

@@ -1,7 +1,9 @@
 import asyncio
+import json
 from datetime import datetime
 from typing import Optional
 
+from openai import APIStatusError
 from openai.types.responses import ResponseInputParam
 from rich.text import Text
 
@@ -280,7 +282,12 @@ class CharlieChatApp(App):
         try:
             await asyncio.to_thread(run_sync_stream)
         except Exception as exc:
-            error_text = f"\n\n**Ошибка:** {type(exc).__name__}: {exc}"
+            if isinstance(exc, APIStatusError):
+                http_error_content = json.loads(exc.response.content.decode('utf-8'))
+                error_text = f"\n\n**Ошибка:** {http_error_content['error']['message']}"
+            else:
+                error_text = f"\n\n**Ошибка:** {type(exc).__name__}: {exc}"
+
             entry["content"] += error_text
             bubble.append_text(error_text)
 
