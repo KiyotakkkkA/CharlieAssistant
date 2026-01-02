@@ -1,20 +1,11 @@
 import argparse
 
-from core.general import Config
-from core.providers import OpenAIProvider
+from core.general.agent.Assistant import Assistant
 from core.ui.components.chat import CharlieChatApp
-from core.types.ai import AIRequest
 from core.exeptions import NoPortError
 
 class App:
     def __init__(self, args: argparse.Namespace) -> None:
-        self.config = Config()
-        self.provider = OpenAIProvider(self.config).set_model('mistralai/devstral-2512:free')
-
-        self.request_params: AIRequest = {
-            "stream": True,
-        }
-
         self.tui_mode = args.tui_mode
         self.detached_mode = args.detached_mode
         self.port = args.port
@@ -33,8 +24,7 @@ class App:
     
     def _run_tui_mode(self) -> None:
         CharlieChatApp(
-            provider=self.provider,
-            request_params=self.request_params,
+            assistant=Assistant(),
         ).run()
     
     def _run_detached_mode(self) -> None:

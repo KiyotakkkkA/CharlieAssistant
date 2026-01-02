@@ -25,5 +25,14 @@ CHAT_BUBBLE_CSS_BLOCK = CSSBlock(
         padding: 0 0 0 0;
         color: {WTEXT};
     }
+
+    .bubble_tools {
+        padding: 1 0 0 0;
+        color: {WTEXT_WEAK};
+    }
+
+    .bubble_tools.hidden {
+        display: none;
+    }
     """
 )

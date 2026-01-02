@@ -1,3 +1,10 @@
+from typing import Iterable, Generator
+
+from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolUnionParam
+
+from core.types.ai import AIChunk
+
+
 class BaseAIProvider:
 
     def __init__(self, api_key: str, api_base: str) -> None:
@@ -5,7 +12,7 @@ class BaseAIProvider:
         self.api_base = api_base
         self.client = None
         self.model_name = ''
-
+    
         self._provider_setup()
 
     def _provider_setup(self):
@@ -14,7 +21,7 @@ class BaseAIProvider:
         
         return self.provider_setup()
     
-    def chat_completion(self, messages, **kwargs):
+    def chat_completion(self, messages: Iterable[ChatCompletionMessageParam], tools: Iterable[ChatCompletionToolUnionParam], **kwargs) -> Generator[AIChunk, None, None]:
         raise NotImplementedError("This method should be implemented by subclasses.")
     
     def provider_setup(self):

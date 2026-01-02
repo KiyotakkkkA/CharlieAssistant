@@ -1,16 +1,19 @@
 import asyncio
+import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
+
+from openai.types.chat import ChatCompletionMessageParam
+from rich.text import Text
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Footer, Header, Input
 
+from core.general.agent.Assistant import Assistant
 from core.ui.components.general import ASCIIDrawer
 from core.ui.components.modal import ConfirmDeleteDialogModal, RenameDialogModal
 from core.ui.components.sidebar import DialogSidebar
-from core.providers import OpenAIProvider
-from core.types.ai import AIRequest
 from core.types.chat import ChatDialog, ChatEntry
 
 from core.ui.components.chat import ChatBubble
@@ -36,12 +39,10 @@ class CharlieChatApp(App):
     def __init__(
         self,
         *,
-        provider: OpenAIProvider,
-        request_params: AIRequest,
+        assistant: Assistant,
     ) -> None:
         super().__init__()
-        self.provider = provider
-        self.request_params = request_params
+        self.assistant = assistant
         self._dialogs: dict[str, ChatDialog] = {}
         self._active_dialog_id: Optional[str] = None
         self._dialog_counter: int = 0
@@ -163,7 +164,7 @@ class CharlieChatApp(App):
             title=entry["title"],
             timestamp=entry["timestamp"],
             content=entry["content"],
-            bordered=entry['bordered'],
+            show_tool_calls=entry["role"] == "assistant",
             render_mode=entry["render_mode"],
             classes=" ".join(classes),
         )
@@ -211,7 +212,7 @@ class CharlieChatApp(App):
             dialog_id,
             ChatEntry(
                 role="assistant",
-                title=self.provider.model_name,
+                title=self.assistant.provider.model_name,
                 timestamp=_now_hhmm(),
                 content="",
                 bordered=True,
@@ -229,27 +230,82 @@ class CharlieChatApp(App):
     async def _stream_ai_reply(self, *, dialog_id: str, user_text: str, bubble: ChatBubble, entry: ChatEntry) -> None:
         accumulated = ""
 
+        tool_events: list[dict] = []
+
+        def update_tools_view() -> None:
+            if not tool_events:
+                return
+
+            used = [ev for ev in tool_events if ev.get("type") == "tool_result"]
+            if not used:
+                return
+
+            total_ms = 0
+            tools_view = Text()
+            tools_view.append("Использованные инструменты", style="bold yellow")
+
+            for ev in used:
+                name = ev.get("name") or ""
+                ms = int(ev.get("duration_ms") or 0)
+                total_ms += ms
+                tools_view.append("\n• ", style="dim")
+                tools_view.append(name, style="cyan")
+                tools_view.append(f" — {ms} ms", style="dim")
+
+            tools_view.append("\n\nИтого: ", style="dim")
+            tools_view.append(f"{total_ms} ms", style="bold")
+            self.call_from_thread(bubble.set_tool_renderable, tools_view)
+
+        def on_tool_event(ev: dict) -> None:
+            tool_events.append(ev)
+            update_tools_view()
+
+        messages = self._build_llm_messages(dialog_id)
+
         def run_sync_stream() -> str:
             nonlocal accumulated
-            for chunk in self.provider.chat_completion(
-                messages=[{"role": "user", "content": user_text}],
-                **self.request_params,
-            ):
-                delta = chunk.get("content", "")
-                if not delta:
+            for chunk in self.assistant.chat_completion(messages=messages, user_text=user_text, on_tool_event=on_tool_event):
+                chunk_data = chunk["content"].choices[0].delta.content or ""
+                if not chunk_data:
                     continue
-                accumulated += delta
-                entry["content"] += delta
-                self.call_from_thread(bubble.append_text, delta)
+                accumulated += chunk_data
+                entry["content"] += chunk_data
+                self.call_from_thread(bubble.append_text, chunk_data)
                 self.call_from_thread(self._chat_scroll.scroll_end, animate=False)
             return accumulated
-
+            
         try:
             await asyncio.to_thread(run_sync_stream)
         except Exception as exc:
             error_text = f"\n\n**Ошибка:** {type(exc).__name__}: {exc}"
             entry["content"] += error_text
             bubble.append_text(error_text)
+
+    def _build_llm_messages(self, dialog_id: str) -> list[ChatCompletionMessageParam]:
+        """Собирает историю диалога для LLM, исключая UI/system-баннеры."""
+        dialog = self._dialogs.get(dialog_id)
+        if not dialog:
+            return []
+
+        messages: list[ChatCompletionMessageParam] = []
+        for entry in dialog["messages"]:
+            role = entry.get("role")
+            if role not in {"user", "assistant"}:
+                continue
+            content = entry.get("content", "")
+            if isinstance(content, Text):
+                content_str = content.plain
+            else:
+                content_str = str(content or "")
+            if role == "assistant" and not content_str.strip():
+                # не отправляем placeholder
+                continue
+            if role == "user":
+                messages.append(cast(ChatCompletionMessageParam, {"role": "user", "content": content_str}))
+            else:
+                messages.append(cast(ChatCompletionMessageParam, {"role": "assistant", "content": content_str}))
+
+        return messages
 
     def _ensure_active_dialog(self) -> str:
         if self._active_dialog_id is None:

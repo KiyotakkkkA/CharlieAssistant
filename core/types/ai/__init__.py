@@ -1,6 +1,12 @@
 from core.types.ai.AIChunk import AIChunk
 from core.types.ai.AIRequest import AIRequest
-from core.types.ai.AITools import ToolFunctionParamsObject, ToolFunctionObject, ToolObject, ToolClassSetupObject
+from core.types.ai.AITools import (
+    ToolFunctionParamsObject,
+    ToolFunctionObject,
+    ToolObject,
+    ToolClassSetupObject,
+    ToolClassProtocol,
+)
 
 __all__ = [
     "AIChunk",
@@ -9,4 +15,5 @@ __all__ = [
     "ToolFunctionObject",
     "ToolObject",
     "ToolClassSetupObject",
+    "ToolClassProtocol",
 ]

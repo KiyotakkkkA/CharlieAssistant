@@ -1,7 +1,7 @@
 from openai import OpenAI
-from openai.types.chat import ChatCompletionChunk
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam, ChatCompletionToolUnionParam
 
-from typing import Generator
+from typing import Generator, Iterable
 
 from core.general import Config
 from core.exeptions import NoClientError
@@ -21,17 +21,18 @@ class OpenAIProvider(BaseAIProvider):
             base_url=self.api_base,
         )
     
-    def chat_completion(self, messages, **kwargs) -> Generator[AIChunk, None, None]:
+    def chat_completion(self, messages: Iterable[ChatCompletionMessageParam], tools: Iterable[ChatCompletionToolUnionParam] = [], **kwargs) -> Generator[AIChunk, None, None]:
         if not self.client:
             raise NoClientError("OpenAIProvider")
         
         for chunk in self.client.chat.completions.create(
             messages=messages,
+            tools=tools,
             model=self.model_name,
             **kwargs,
         ):
             chunk: ChatCompletionChunk
-            yield AIChunk(content=chunk.choices[0].delta.content or '')
+            yield AIChunk(content=chunk)
         
 
         
