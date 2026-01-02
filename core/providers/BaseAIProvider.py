@@ -16,7 +16,7 @@ class BaseAIProvider:
         self._provider_setup()
 
     def _provider_setup(self):
-        if not self.api_key or not self.api_base:
+        if not self.api_key or not self.api_base: 
             raise ValueError("API key или API base не были установлены")
         
         return self.provider_setup()

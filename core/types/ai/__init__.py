@@ -8,6 +8,12 @@ from core.types.ai.AITools import (
     ToolClassProtocol,
     FlatToolObject
 )
+from core.types.ai.AIAssistant import (
+    AllowedAIToolTypes,
+    AllowedAIProviders,
+    AIProviderRecord,
+    AIProviders
+)
 
 __all__ = [
     "OpenRouterAIResponseChunk",
@@ -18,4 +24,8 @@ __all__ = [
     "ToolClassSetupObject",
     "ToolClassProtocol",
     "FlatToolObject",
+    "AllowedAIToolTypes",
+    "AllowedAIProviders",
+    "AIProviderRecord",
+    "AIProviders"
 ]

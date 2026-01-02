@@ -14,15 +14,25 @@ from core.types.ai import (
     ToolClassProtocol,
     ToolObject,
     FlatToolObject,
+    AllowedAIToolTypes,
+    AIProviders
 )
 from core.general.agent.tools import (
     SystemManagementTool,
 )
+from core.types.ai.AIAssistant import AllowedAIProviders
 
 class Assistant:
     def __init__(self) -> None:
         self.config = Config()
-        self.provider = OpenAIProvider(self.config).set_model('mistralai/devstral-2512:free')
+
+        self.current_provider = {
+            'generation_fn': lambda: 'NotImplemented'
+        }
+
+        self.providers: AIProviders = {
+            'openrouter': ("OpenAIProvider", OpenAIProvider, self._openrouter_generate_response, 'flat'),
+        }
 
         self.request_params: AIRequest = {
             "stream": True,
@@ -35,10 +45,26 @@ class Assistant:
             SystemManagementTool,
         ]
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
-
-        self.load_tools()
     
-    def chat_completion(
+    def with_provider(self, provider_id: AllowedAIProviders):
+        selected_provider_meta = self.providers[provider_id]
+        self.current_provider = {
+            'generation_fn': selected_provider_meta[2]
+        }
+        self.provider = selected_provider_meta[1](self.config) # type: ignore
+
+        self.load_tools(selected_provider_meta[3])
+
+        return self
+    
+    def with_model(self, model_name):
+        self.provider.set_model(model_name)
+        return self
+    
+    def generate_response(self) -> Any:
+        return self.current_provider['generation_fn']
+        
+    def _openrouter_generate_response(
         self,
         *,
         messages: ResponseInputParam | None = None,
@@ -211,12 +237,12 @@ class Assistant:
                     }
                 )
     
-    def load_tools(self) -> None:
+    def load_tools(self, mode: AllowedAIToolTypes) -> None:
         for tool_class in self.tools_classes:
             tool_object = tool_class.get_commands()
 
             for tool in tool_object:
-                tool_def = tool['tool'].build_flat()
+                tool_def = tool['tool'].build_flat() if mode == 'flat' else tool['tool'].build()
                 handler = tool.get("handler")
 
                 tool_name = ""

@@ -263,7 +263,7 @@ class CharlieChatApp(App):
 
         def run_sync_stream() -> str:
             nonlocal accumulated
-            for chunk in self.assistant.chat_completion(messages=messages, user_text=user_text):
+            for chunk in self.assistant.generate_response()(messages=messages, user_text=user_text):
                 tool_ev = chunk.get("tool_event")
                 if isinstance(tool_ev, dict) and tool_ev:
                     on_tool_event(tool_ev)
