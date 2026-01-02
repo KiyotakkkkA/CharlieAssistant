@@ -1,4 +1,4 @@
-from core.types.ai.AIChunk import AIChunk
+from core.types.ai.AIChunk import OpenRouterAIResponseChunk
 from core.types.ai.AIRequest import AIRequest
 from core.types.ai.AITools import (
     ToolFunctionParamsObject,
@@ -6,14 +6,16 @@ from core.types.ai.AITools import (
     ToolObject,
     ToolClassSetupObject,
     ToolClassProtocol,
+    FlatToolObject
 )
 
 __all__ = [
-    "AIChunk",
+    "OpenRouterAIResponseChunk",
     "AIRequest",
     "ToolFunctionParamsObject",
     "ToolFunctionObject",
     "ToolObject",
     "ToolClassSetupObject",
     "ToolClassProtocol",
+    "FlatToolObject",
 ]

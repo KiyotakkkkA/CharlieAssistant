@@ -1,4 +1,4 @@
-from core.types.ai import ToolObject
+from core.types.ai import ToolObject, FlatToolObject
 
 
 class ToolBuilder:
@@ -51,3 +51,12 @@ class ToolBuilder:
 
     def build(self) -> ToolObject:
         return self.tool
+
+    def build_flat(self) -> FlatToolObject:
+        fn = self.tool.get("function") or {}
+        return {
+            "type": self.tool.get("type", "function"),
+            "name": fn.get("name", ""),
+            "description": fn.get("description", ""),
+            "parameters": fn.get("parameters", {}),
+        }

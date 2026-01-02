@@ -1,8 +1,8 @@
-from typing import Iterable, Generator
+from typing import Generator
 
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolUnionParam
+from openai.types.responses import ResponseInputParam
 
-from core.types.ai import AIChunk
+from core.types.ai import OpenRouterAIResponseChunk
 
 
 class BaseAIProvider:
@@ -21,7 +21,7 @@ class BaseAIProvider:
         
         return self.provider_setup()
     
-    def chat_completion(self, messages: Iterable[ChatCompletionMessageParam], tools: Iterable[ChatCompletionToolUnionParam], **kwargs) -> Generator[AIChunk, None, None]:
+    def generate_response(self, messages: ResponseInputParam , **kwargs) -> Generator[OpenRouterAIResponseChunk, None, None]:
         raise NotImplementedError("This method should be implemented by subclasses.")
     
     def provider_setup(self):

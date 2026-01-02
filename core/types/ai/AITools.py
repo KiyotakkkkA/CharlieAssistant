@@ -1,4 +1,7 @@
-from typing import Dict, List, Protocol, TypedDict, Callable, NotRequired
+from typing import Dict, List, Protocol, TypedDict, Callable, NotRequired, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.general.agent.ToolBuilder import ToolBuilder
 
 
 class ToolFunctionParamsObject(TypedDict):
@@ -18,10 +21,18 @@ class ToolObject(TypedDict):
     function: ToolFunctionObject
 
 
+class FlatToolObject(TypedDict, total=False):
+    type: str
+    name: str
+    description: str
+    parameters: ToolFunctionParamsObject
+    strict: NotRequired[bool]
+
+
 class ToolClassSetupObject(TypedDict):
     name: str
     handler: Callable
-    tool: ToolObject
+    tool: "ToolBuilder"
 
 
 class ToolClassProtocol(Protocol):

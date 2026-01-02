@@ -2,13 +2,19 @@ import json
 
 import time
 
-from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Type, cast
+from typing import Any, Callable, Dict, Generator, List, Type, cast
 
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolUnionParam
+from openai.types.responses import ResponseInputParam 
 
 from core.general import Config
 from core.providers import OpenAIProvider
-from core.types.ai import AIChunk, AIRequest, ToolClassProtocol, ToolObject
+from core.types.ai import (
+    OpenRouterAIResponseChunk,
+    AIRequest,
+    ToolClassProtocol,
+    ToolObject,
+    FlatToolObject,
+)
 from core.general.agent.tools import (
     SystemManagementTool,
 )
@@ -22,93 +28,143 @@ class Assistant:
             "stream": True,
         }
 
-        self.tools: List[ToolObject] = []
-        self._tool_handlers: Dict[str, Callable[..., Any]] = {}
+        self.tools: List[ToolObject | FlatToolObject] = [{
+            'type': 'web_search_preview'
+        }]
         self.tools_classes: List[Type[ToolClassProtocol]] = [
             SystemManagementTool,
         ]
+        self._tool_handlers: Dict[str, Callable[..., Any]] = {}
 
         self.load_tools()
     
     def chat_completion(
         self,
         *,
-        messages: Iterable[ChatCompletionMessageParam] | None = None,
+        messages: ResponseInputParam | None = None,
         user_text: str = "",
-        max_tool_iterations: int = 6,
-        on_tool_event: Optional[Callable[[dict], None]] = None,
         **kwargs,
-    ) -> Generator[AIChunk, None, None]:
+    ) -> Generator[OpenRouterAIResponseChunk, None, None]:
 
-        base_messages: List[ChatCompletionMessageParam] = list(messages) if messages is not None else [
+        base_messages: ResponseInputParam = list(messages) if messages is not None else [
             {"role": "user", "content": user_text}
         ]
 
-        def _emit(event: dict) -> None:
-            if on_tool_event is not None:
-                on_tool_event(event)
+        def _emit(ev: dict) -> None:
+            yield_chunk: OpenRouterAIResponseChunk = {
+                "event": ev,
+                "event_type": str(ev.get("type") or "tool_event"),
+                "tool_event": ev,
+            }
+            nonlocal_yields.append(yield_chunk)
 
-        for _iteration in range(max_tool_iterations):
-            tool_calls_acc: Dict[int, dict] = {}
+        nonlocal_yields: List[OpenRouterAIResponseChunk] = []
+
+        while True:
             assistant_content_parts: List[str] = []
+            tool_calls_acc: Dict[int, Dict[str, Any]] = {}
 
-            for chunk in self.provider.chat_completion(
-                messages=base_messages,
-                tools=cast(Iterable[ChatCompletionToolUnionParam], self.tools),
+            request_kwargs: dict[str, Any] = {
                 **self.request_params,
                 **kwargs,
+            }
+            request_kwargs["tools"] = self.tools
+
+            for chunk in self.provider.generate_response(
+                messages=base_messages,
+                **request_kwargs,
             ):
+                if nonlocal_yields:
+                    for y in nonlocal_yields:
+                        yield y
+                    nonlocal_yields.clear()
+
                 yield chunk
 
-                delta = chunk["content"].choices[0].delta
-                if delta.content:
-                    assistant_content_parts.append(delta.content)
+                if chunk.get("ai_content_part"):
+                    assistant_content_parts.append(str(chunk.get("ai_content_part") or ""))
 
-                if getattr(delta, "tool_calls", None):
-                    for tc in (delta.tool_calls or []):
-                        idx = tc.index
+                tool_call = chunk.get("tool_call")
+                tool_call_index = chunk.get("tool_call_index")
+
+                if isinstance(tool_call_index, int) and isinstance(tool_call, dict):
+                    current = tool_calls_acc.get(tool_call_index)
+                    if current is None:
+                        current = {
+                            "type": tool_call.get("type") or "function_call",
+                            "id": tool_call.get("id") or "",
+                            "call_id": tool_call.get("call_id") or "",
+                            "name": tool_call.get("name") or "",
+                            "arguments": tool_call.get("arguments") or "",
+                        }
+                        tool_calls_acc[tool_call_index] = current
+                    else:
+                        for k in ("type", "id", "call_id", "name", "arguments"):
+                            v = tool_call.get(k)
+                            if isinstance(v, str) and v:
+                                current[k] = v
+
+                delta = chunk.get("tool_call_arguments_delta")
+                if isinstance(delta, str) and delta:
+                    idx = chunk.get("tool_call_index")
+                    if isinstance(idx, int):
                         current = tool_calls_acc.get(idx)
                         if current is None:
                             current = {
-                                "id": getattr(tc, "id", None),
-                                "type": getattr(tc, "type", "function"),
-                                "function": {
-                                    "name": getattr(tc.function, "name", ""),
-                                    "arguments": "",
-                                },
+                                "type": "function_call",
+                                "id": chunk.get("tool_call_id") or "",
+                                "call_id": "",
+                                "name": "",
+                                "arguments": "",
                             }
                             tool_calls_acc[idx] = current
+                        current["arguments"] = (current.get("arguments") or "") + delta
 
-                        if getattr(tc, "id", None):
-                            current["id"] = tc.id
-                        if getattr(tc, "type", None):
-                            current["type"] = tc.type
-                        if tc.function and getattr(tc.function, "name", None):
-                            current["function"]["name"] = tc.function.name
-                        if tc.function and getattr(tc.function, "arguments", None):
-                            current["function"]["arguments"] += tc.function.arguments
+                done_args = chunk.get("tool_call_arguments")
+                if isinstance(done_args, str):
+                    idx = chunk.get("tool_call_index")
+                    if isinstance(idx, int):
+                        current = tool_calls_acc.get(idx)
+                        if current is None:
+                            current = {
+                                "type": "function_call",
+                                "id": chunk.get("tool_call_id") or "",
+                                "call_id": "",
+                                "name": "",
+                                "arguments": done_args,
+                            }
+                            tool_calls_acc[idx] = current
+                        else:
+                            current["arguments"] = done_args
+
+            if nonlocal_yields:
+                for y in nonlocal_yields:
+                    yield y
+                nonlocal_yields.clear()
 
             tool_calls = [tool_calls_acc[i] for i in sorted(tool_calls_acc.keys())]
             assistant_content = "".join(assistant_content_parts)
 
-            assistant_message: ChatCompletionMessageParam = {
-                "role": "assistant",
-                "content": assistant_content,
-            }
-            if tool_calls:
-                assistant_message["tool_calls"] = tool_calls  # type: ignore[typeddict-item]
-            base_messages.append(assistant_message)
+            if assistant_content.strip():
+                base_messages.append({"role": "assistant", "content": assistant_content})
 
             if not tool_calls:
                 break
 
             for tc in tool_calls:
-                fn = (tc.get("function") or {})
-                tool_name = (fn.get("name") or "").strip()
-                tool_call_id = (tc.get("id") or "").strip()
-                raw_args = fn.get("arguments") or "{}"
+                tool_name = (tc.get("name") or "").strip()
+                tool_call_id = (tc.get("call_id") or tc.get("id") or "").strip()
+                raw_args = tc.get("arguments") or "{}"
 
-                _emit({"type": "tool_call", "name": tool_name, "arguments": raw_args, "id": tool_call_id})
+                base_messages.append(
+                    {
+                        "type": "function_call",
+                        "id": tc.get("id") or "",
+                        "call_id": tc.get("call_id") or tool_call_id,
+                        "name": tool_name,
+                        "arguments": raw_args,
+                    }
+                )
 
                 args: dict
                 try:
@@ -117,9 +173,11 @@ class Assistant:
                 except Exception:
                     args = {}
 
+                _emit({"type": "tool_call", "name": tool_name, "arguments": raw_args, "id": tool_call_id})
+
+                handler = self._tool_handlers.get(tool_name)
                 result_obj: Any
                 duration_ms = 0
-                handler = self._tool_handlers.get(tool_name)
                 if handler is None:
                     result_obj = {"error": f"Unknown tool: {tool_name}"}
                 else:
@@ -128,31 +186,46 @@ class Assistant:
                         result_obj = handler(**args)
                     except Exception as exc:
                         result_obj = {"error": f"{type(exc).__name__}: {exc}"}
-
                     duration_ms = int((time.perf_counter() - t0) * 1000)
 
-                _emit({"type": "tool_result", "name": tool_name, "result": result_obj, "id": tool_call_id, "duration_ms": duration_ms})
+                _emit(
+                    {
+                        "type": "tool_result",
+                        "name": tool_name,
+                        "result": result_obj,
+                        "id": tool_call_id,
+                        "duration_ms": duration_ms,
+                    }
+                )
 
                 try:
-                    tool_content = json.dumps(result_obj, ensure_ascii=False)
+                    tool_output = json.dumps(result_obj, ensure_ascii=False)
                 except Exception:
-                    tool_content = str(result_obj)
+                    tool_output = str(result_obj)
 
-                tool_message: ChatCompletionMessageParam = {
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": tool_content,
-                }
-                base_messages.append(tool_message)
+                base_messages.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": tool_output,
+                    }
+                )
     
     def load_tools(self) -> None:
         for tool_class in self.tools_classes:
             tool_object = tool_class.get_commands()
 
             for tool in tool_object:
-                tool_name = tool["tool"]["function"]["name"]
-                self._tool_handlers[tool_name] = tool["handler"]
-                self.tools.append({
-                    "type": tool['tool']['type'],
-                    "function": tool['tool']['function'],
-                })
+                tool_def = tool['tool'].build_flat()
+                handler = tool.get("handler")
+
+                tool_name = ""
+                if isinstance(tool_def.get("function"), dict):
+                    tool_name = str((tool_def.get("function") or {}).get("name") or "")
+                elif isinstance(tool_def.get("name"), str):
+                    tool_name = cast(str, tool_def.get("name") or "")
+
+                if tool_name:
+                    if callable(handler):
+                        self._tool_handlers[tool_name] = cast(Callable[..., Any], handler)
+                    self.tools.append(tool_def)

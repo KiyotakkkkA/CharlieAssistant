@@ -18,7 +18,6 @@ class SystemManagementTool(ITool):
             "tool": ToolBuilder()
                 .set_name("get_time_tool")
                 .set_description("Tool that retrieves the current system time")
-                .build()
         }
     
     @staticmethod

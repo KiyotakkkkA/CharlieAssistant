@@ -1,9 +1,8 @@
 import asyncio
-import os
 from datetime import datetime
-from typing import Optional, cast
+from typing import Optional
 
-from openai.types.chat import ChatCompletionMessageParam
+from openai.types.responses import ResponseInputParam
 from rich.text import Text
 
 from textual.app import App, ComposeResult
@@ -264,13 +263,17 @@ class CharlieChatApp(App):
 
         def run_sync_stream() -> str:
             nonlocal accumulated
-            for chunk in self.assistant.chat_completion(messages=messages, user_text=user_text, on_tool_event=on_tool_event):
-                chunk_data = chunk["content"].choices[0].delta.content or ""
-                if not chunk_data:
+            for chunk in self.assistant.chat_completion(messages=messages, user_text=user_text):
+                tool_ev = chunk.get("tool_event")
+                if isinstance(tool_ev, dict) and tool_ev:
+                    on_tool_event(tool_ev)
+
+                content_chunk_data = chunk.get("ai_content_part") or ""
+                if not content_chunk_data:
                     continue
-                accumulated += chunk_data
-                entry["content"] += chunk_data
-                self.call_from_thread(bubble.append_text, chunk_data)
+                accumulated += content_chunk_data
+                entry["content"] += content_chunk_data
+                self.call_from_thread(bubble.append_text, content_chunk_data)
                 self.call_from_thread(self._chat_scroll.scroll_end, animate=False)
             return accumulated
             
@@ -281,13 +284,12 @@ class CharlieChatApp(App):
             entry["content"] += error_text
             bubble.append_text(error_text)
 
-    def _build_llm_messages(self, dialog_id: str) -> list[ChatCompletionMessageParam]:
-        """Собирает историю диалога для LLM, исключая UI/system-баннеры."""
+    def _build_llm_messages(self, dialog_id: str) -> ResponseInputParam:
         dialog = self._dialogs.get(dialog_id)
         if not dialog:
             return []
 
-        messages: list[ChatCompletionMessageParam] = []
+        messages: ResponseInputParam = []
         for entry in dialog["messages"]:
             role = entry.get("role")
             if role not in {"user", "assistant"}:
@@ -298,12 +300,11 @@ class CharlieChatApp(App):
             else:
                 content_str = str(content or "")
             if role == "assistant" and not content_str.strip():
-                # не отправляем placeholder
                 continue
             if role == "user":
-                messages.append(cast(ChatCompletionMessageParam, {"role": "user", "content": content_str}))
+                messages.append({"role": "user", "content": content_str})
             else:
-                messages.append(cast(ChatCompletionMessageParam, {"role": "assistant", "content": content_str}))
+                messages.append({"role": "assistant", "content": content_str})
 
         return messages
 
