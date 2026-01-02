@@ -19,6 +19,7 @@ from core.types.ai import (
 )
 from core.general.agent.tools import (
     SystemManagementTool,
+    DockerTool
 )
 from core.types.ai.AIAssistant import AllowedAIProviders
 
@@ -38,11 +39,11 @@ class Assistant:
             "stream": True,
         }
 
-        self.tools: List[ToolObject | FlatToolObject] = [{
-            'type': 'web_search_preview'
-        }]
+        self.tools: List[ToolObject | FlatToolObject] = []
+
         self.tools_classes: List[Type[ToolClassProtocol]] = [
             SystemManagementTool,
+            DockerTool
         ]
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
     
@@ -52,6 +53,13 @@ class Assistant:
             'generation_fn': selected_provider_meta[2]
         }
         self.provider = selected_provider_meta[1](self.config) # type: ignore
+
+        if provider_id == 'openrouter':
+            self.tools = [
+                {
+                    'type': 'web_search_preview'
+                }
+            ]
 
         self.load_tools(selected_provider_meta[3])
 
