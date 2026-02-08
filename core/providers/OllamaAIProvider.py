@@ -171,3 +171,47 @@ class OllamaAIProvider(BaseAIProvider):
 
             if self._get_field(part, "done") is True:
                 yield OllamaAIResponseChunk(event=part, event_type="ollama.chat.done")
+
+    def add_assistant_message(self, messages: list[dict[str, Any]], *, content: str, tool_calls: list[dict[str, Any]]) -> None:
+        if not content.strip() and not tool_calls:
+            return
+
+        msg: dict[str, Any] = {"role": "assistant", "content": content}
+
+        if tool_calls:
+            calls_payload: list[dict[str, Any]] = []
+            for idx, tc in enumerate(tool_calls):
+                tool_name = str((tc.get("name") or "")).strip()
+                raw_args = tc.get("arguments") or "{}"
+
+                args_dict: dict[str, Any]
+                try:
+                    parsed = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else {}
+                    args_dict = parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    args_dict = {}
+
+                call_index = tc.get("index")
+                if isinstance(call_index, int):
+                    idx = call_index
+
+                calls_payload.append(
+                    {
+                        "type": "function",
+                        "function": {"index": idx, "name": tool_name, "arguments": args_dict},
+                    }
+                )
+
+            msg["tool_calls"] = calls_payload
+
+        messages.append(msg)
+
+    def add_tool_result_message(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tool_name: str,
+        tool_call: dict[str, Any],
+        output: str,
+    ) -> None:
+        messages.append({"role": "tool", "tool_name": tool_name, "content": output})

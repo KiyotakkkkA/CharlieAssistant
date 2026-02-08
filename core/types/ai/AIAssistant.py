@@ -8,7 +8,6 @@ AllowedAIProviders = Literal['openrouter', 'ollama']
 AIProviderRecord = Tuple[
     str,
     Type[BaseAIProvider],
-    Callable[..., Any],
     AllowedAIToolTypes
 ]
 

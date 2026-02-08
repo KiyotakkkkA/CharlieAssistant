@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Any, Generator
 
 from openai.types.responses import ResponseInputParam
 
@@ -28,6 +28,29 @@ class BaseAIProvider:
     
     def generate_response(self, messages: ResponseInputParam , **kwargs) -> Generator[AIResponseChunk, None, None]:
         raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def add_assistant_message(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        content: str,
+        tool_calls: list[dict[str, Any]],
+    ) -> None:
+        if content.strip():
+            messages.append({"role": "assistant", "content": content})
+
+    def add_tool_call_message(self, messages: list[dict[str, Any]], *, tool_call: dict[str, Any]) -> None:
+        return
+
+    def add_tool_result_message(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tool_name: str,
+        tool_call: dict[str, Any],
+        output: str,
+    ) -> None:
+        return
     
     def provider_setup(self):
         raise NotImplementedError("This method should be implemented by subclasses.")

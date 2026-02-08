@@ -3,6 +3,8 @@ import argparse
 from core.general.agent.Assistant import Assistant
 from core.ui.components.chat import CharlieChatApp
 from core.exeptions import NoPortError
+from core.bootstrap import assistant
+
 
 class App:
     def __init__(self, args: argparse.Namespace) -> None:
@@ -17,8 +19,6 @@ class App:
             raise ValueError("Нельзя одновременно использовать режим TUI и фоновый режим работы.")
 
     def run(self) -> None:
-        assistant = Assistant().with_provider('ollama').with_model('gpt-oss:20b')
-
         if self.tui_mode:
             self._run_tui_mode(assistant)
         elif self.detached_mode:

@@ -41,6 +41,7 @@ dependencies = [
     { name = "dotenv" },
     { name = "ollama" },
     { name = "openai" },
+    { name = "python-dotenv" },
     { name = "rich" },
     { name = "textual" },
 ]
@@ -51,6 +52,7 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "ollama", specifier = ">=0.6.1" },
     { name = "openai", specifier = ">=2.14.0" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "textual", specifier = ">=0.80.0" },
 ]

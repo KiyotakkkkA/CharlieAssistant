@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import Optional
+import inspect
 
 from openai import APIStatusError
 from openai.types.responses import ResponseInputParam
@@ -10,6 +11,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Footer, Header, Input
+from textual import events
 
 from core.general.agent.Assistant import Assistant
 from core.ui.components.general import ASCIIDrawer
@@ -18,6 +20,7 @@ from core.ui.components.sidebar import DialogSidebar
 from core.types.chat import ChatDialog, ChatEntry
 
 from core.ui.components.chat import ChatBubble
+from core.ui.components.chat.CommandPalette import CommandPalette
 from core.ui.css import APPLICATION_THEME
 
 
@@ -59,6 +62,12 @@ class CharlieChatApp(App):
                 self._chat_scroll = VerticalScroll(id="chat_scroll")
                 yield self._chat_scroll
                 with Container(id="composer"):
+                    self._command_palette = CommandPalette(
+                        commands=self.assistant.commands,
+                        id="command_palette",
+                        classes="hidden",
+                    )
+                    yield self._command_palette
                     self._input = Input(
                         placeholder="Напишите сообщение и нажмите Enter… (Ctrl+C — выход)",
                         id="chat_input",
@@ -72,6 +81,44 @@ class CharlieChatApp(App):
         dialog = self._create_dialog(title="Диалог 1", make_active=True)
         self._seed_dialog(dialog_id=dialog["id"])
         self._input.focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "chat_input":
+            return
+
+        value = event.value or ""
+        cmd_token = self._extract_command_token(value)
+        if cmd_token is None:
+            if self._command_palette.is_open:
+                self._command_palette.close()
+            return
+
+        self._command_palette.open(cmd_token)
+
+    def on_key(self, event: events.Key) -> None:
+        if not getattr(self, "_command_palette", None):
+            return
+
+        if not self._command_palette.is_open:
+            return
+
+        key = event.key
+        if key in {"up", "down", "escape", "enter", "tab"}:
+            event.prevent_default()
+            event.stop()
+
+        if key == "up":
+            self._command_palette.move_selection(-1)
+        elif key == "down":
+            self._command_palette.move_selection(1)
+        elif key == "escape":
+            self._command_palette.close()
+        elif key in {"enter", "tab"}:
+            chosen = self._command_palette.choose_selected()
+            if chosen:
+                self._input.value = f"@{chosen} "
+                self._input.cursor_position = len(self._input.value)
+                self._command_palette.close()
 
     def _seed_dialog(self, dialog_id: str) -> None:
         self._add_banner(dialog_id)
@@ -171,17 +218,40 @@ class CharlieChatApp(App):
         )
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = (event.value or "").strip()
-        if not text or self._busy:
-            self._input.value = ""
+        self._input.value = ""
+        await self._handle_submitted_text((event.value or "").strip())
+
+    def send_as_user(self, message: str) -> None:
+        text = (message or "").strip()
+        if not text:
             return
+        self.run_worker(self._handle_submitted_text(text), exclusive=True)
+
+    def apply_theme_css(self, css: str) -> None:
+        self.__class__.CSS = css
+        app_path = inspect.getfile(self.__class__)
+        read_from = (app_path, f"{self.__class__.__name__}.CSS")
+        self.stylesheet.add_source(css, read_from=read_from, is_default_css=False)
+        self.refresh_css(animate=False)
+        self.refresh(layout=True)
+
+    async def _handle_submitted_text(self, text: str) -> None:
+        text = (text or "").strip()
+        if not text or self._busy:
+            return
+
+        if text.startswith("@"):
+            dialog_id = self._ensure_active_dialog()
+            handled = self._try_run_command(dialog_id=dialog_id, text=text)
+            if handled:
+                self._input.focus()
+                return
 
         self._busy = True
         self._input.disabled = True
 
         dialog_id = self._ensure_active_dialog()
         self._append_user(dialog_id, text)
-        self._input.value = ""
 
         ai_bubble, ai_entry = self._append_ai_placeholder(dialog_id)
         await self._stream_ai_reply(dialog_id=dialog_id, user_text=text, bubble=ai_bubble, entry=ai_entry)
@@ -189,6 +259,65 @@ class CharlieChatApp(App):
         self._busy = False
         self._input.disabled = False
         self._input.focus()
+
+    def _extract_command_token(self, value: str) -> str | None:
+        raw = value or ""
+        if not raw.startswith("@"):
+            return None
+        after = raw[1:]
+        if not after:
+            return ""
+        if " " in after:
+            return None
+        return after.strip()
+
+    def _append_system(self, dialog_id: str, content: str | Text) -> None:
+        entry = self._store_entry(
+            dialog_id,
+            ChatEntry(
+                role="system",
+                title="Команда",
+                timestamp=_now_hhmm(),
+                content=content,
+                bordered=True,
+                render_mode="markdown" if isinstance(content, str) else "markup",
+            ),
+        )
+
+        if dialog_id == self._active_dialog_id:
+            bubble = self._build_bubble(entry)
+            self._chat_scroll.mount(bubble)
+            self._chat_scroll.scroll_end(animate=False)
+
+    def _try_run_command(self, *, dialog_id: str, text: str) -> bool:
+        raw = (text or "").strip()
+        if not raw.startswith("@"):
+            return False
+
+        payload = raw[1:].strip()
+        if not payload:
+            self._append_system(dialog_id, "Укажите команду после **@**.")
+            return True
+
+        parts = payload.split(maxsplit=1)
+        name = parts[0].strip()
+        args = parts[1] if len(parts) > 1 else ""
+
+        cmd = (self.assistant.commands or {}).get(name)
+        if cmd is None:
+            self._append_system(dialog_id, f"Неизвестная команда: **@{name}**")
+            return True
+
+        try:
+            out = cmd.execute(app=self, assistant=self.assistant, dialog_id=dialog_id, args=args)
+        except Exception as exc:
+            self._append_system(dialog_id, f"Ошибка команды **@{name}**: {type(exc).__name__}: {exc}")
+            return True
+
+        if out is not None and (str(out).strip() if isinstance(out, str) else True):
+            self._append_system(dialog_id, out)
+
+        return True
 
     def _append_user(self, dialog_id: str, content: str) -> None:
         entry = self._store_entry(
@@ -265,7 +394,7 @@ class CharlieChatApp(App):
 
         def run_sync_stream() -> str:
             nonlocal accumulated
-            for chunk in self.assistant.generate_response()(messages=messages, user_text=user_text):
+            for chunk in self.assistant.generate_response(messages=messages, user_text=user_text):
                 tool_ev = chunk.get("tool_event")
                 if isinstance(tool_ev, dict) and tool_ev:
                     on_tool_event(tool_ev)

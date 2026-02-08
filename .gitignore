@@ -10,3 +10,6 @@ wheels/
 .venv
 
 .env
+
+# Local starter
+charlie.bat

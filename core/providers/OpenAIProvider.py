@@ -113,6 +113,36 @@ class OpenAIProvider(BaseAIProvider):
                         chunk["tool_call_id"] = cast(str, tool_call["id"])
 
             yield chunk
+
+    def add_assistant_message(self, messages: list[dict[str, Any]], *, content: str, tool_calls: list[dict[str, Any]]) -> None:
+        if content.strip():
+            messages.append({"role": "assistant", "content": content})
+
+    def add_tool_call_message(self, messages: list[dict[str, Any]], *, tool_call: dict[str, Any]) -> None:
+        tool_name = str((tool_call.get("name") or "")).strip()
+        raw_args = tool_call.get("arguments") or "{}"
+        call_id = str((tool_call.get("call_id") or tool_call.get("id") or "")).strip()
+
+        messages.append(
+            {
+                "type": "function_call",
+                "id": tool_call.get("id") or "",
+                "call_id": tool_call.get("call_id") or call_id,
+                "name": tool_name,
+                "arguments": raw_args,
+            }
+        )
+
+    def add_tool_result_message(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tool_name: str,
+        tool_call: dict[str, Any],
+        output: str,
+    ) -> None:
+        call_id = str((tool_call.get("call_id") or tool_call.get("id") or "")).strip()
+        messages.append({"type": "function_call_output", "call_id": call_id, "output": output})
         
 
         
