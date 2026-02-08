@@ -13,3 +13,7 @@ wheels/
 
 # Local starter
 charlie.bat
+
+# unneccesary
+data/cache
+data/cache/*

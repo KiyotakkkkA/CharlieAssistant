@@ -19,7 +19,8 @@ from core.types.ai import (
 )
 from core.general.agent.tools import (
     SystemManagementTool,
-    DockerTool
+    DockerTool,
+    MIREAScheduleTool
 )
 from core.types.ai.AIAssistant import AllowedAIProviders
 
@@ -44,7 +45,8 @@ class Assistant:
 
         self.tools_classes: List[Type[ToolClassProtocol]] = [
             SystemManagementTool,
-            DockerTool
+            DockerTool,
+            MIREAScheduleTool
         ]
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
 

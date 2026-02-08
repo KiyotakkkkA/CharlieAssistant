@@ -375,7 +375,6 @@ class CharlieChatApp(App):
             ),
             True,
         )
-
         bubble = self._build_bubble(entry)
         if self._should_mount_entry(dialog_id, entry):
             self._chat_scroll.mount(bubble)
