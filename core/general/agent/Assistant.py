@@ -21,7 +21,8 @@ from core.general.agent.tools import (
     SystemManagementTool,
     DockerTool,
     MIREAScheduleTool,
-    TelegramTool
+    TelegramTool,
+    WebSearchTool
 )
 from core.types.ai.AIAssistant import AllowedAIProviders
 
@@ -46,7 +47,8 @@ class Assistant:
             SystemManagementTool,
             DockerTool,
             MIREAScheduleTool,
-            TelegramTool
+            TelegramTool,
+            WebSearchTool,
         ]
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
 

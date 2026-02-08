@@ -1,4 +1,4 @@
-from core.commands import ThemeChangeCommand, TestMsgCommand
+from core.commands import ThemeChangeCommand, SkillsInfoCommand
 from core.general.agent.Assistant import Assistant
 
 
@@ -8,7 +8,7 @@ assistant = (
     .with_model('gpt-oss:20b')
     .with_commands({
         "theme_change": ThemeChangeCommand(),
-        "test_msg": TestMsgCommand(),
+        "skills": SkillsInfoCommand(),
     })
 )
 
