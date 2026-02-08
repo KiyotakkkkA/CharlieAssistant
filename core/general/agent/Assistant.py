@@ -20,7 +20,8 @@ from core.types.ai import (
 from core.general.agent.tools import (
     SystemManagementTool,
     DockerTool,
-    MIREAScheduleTool
+    MIREAScheduleTool,
+    TelegramTool
 )
 from core.types.ai.AIAssistant import AllowedAIProviders
 
@@ -28,8 +29,6 @@ from core.interfaces import ICommand
 
 class Assistant:
     def __init__(self) -> None:
-        self.config = Config()
-
         self.providers: AIProviders = {
             'openrouter': ("OpenAIProvider", OpenAIProvider, 'flat'),
             'ollama': ("OllamaAIProvider", OllamaAIProvider, 'normal'),
@@ -46,7 +45,8 @@ class Assistant:
         self.tools_classes: List[Type[ToolClassProtocol]] = [
             SystemManagementTool,
             DockerTool,
-            MIREAScheduleTool
+            MIREAScheduleTool,
+            TelegramTool
         ]
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
 
@@ -56,7 +56,7 @@ class Assistant:
     
     def with_provider(self, provider_id: AllowedAIProviders):
         selected_provider_meta = self.providers[provider_id]
-        self.provider = selected_provider_meta[1](self.config) # type: ignore
+        self.provider = selected_provider_meta[1]() # type: ignore
 
         if provider_id == 'openrouter':
             self.tools = [

@@ -14,10 +14,10 @@ class OllamaAIProvider(BaseAIProvider):
     REQUIRES_API_KEY = False
     REQUIRES_API_BASE = False
 
-    def __init__(self, config: Config):
+    def __init__(self):
         super().__init__(
-            api_key=config.OLLAMA_API_KEY,
-            api_base=config.OLLAMA_API_BASE
+            api_key=Config.OLLAMA_API_KEY,
+            api_base=Config.OLLAMA_API_BASE
         )
 
     def provider_setup(self):

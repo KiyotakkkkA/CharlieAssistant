@@ -9,10 +9,10 @@ from core.types.ai import OpenRouterAIResponseChunk
 from core.providers.BaseAIProvider import BaseAIProvider
 
 class OpenAIProvider(BaseAIProvider):
-    def __init__(self, config: Config):
+    def __init__(self):
         super().__init__(
-            api_key=config.OPENAI_API_KEY,
-            api_base=config.OPENAI_API_BASE
+            api_key=Config.OPENAI_API_KEY,
+            api_base=Config.OPENAI_API_BASE
         )
 
     def provider_setup(self):
