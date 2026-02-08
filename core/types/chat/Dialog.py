@@ -10,6 +10,8 @@ class ChatEntry(TypedDict):
     timestamp: str | None
     bordered: bool
     render_mode: Literal["markdown", "markup"]
+    build_to_llm: bool
+    build_to_ui: bool
 
 
 class ChatDialog(TypedDict):

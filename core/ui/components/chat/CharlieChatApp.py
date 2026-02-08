@@ -17,11 +17,14 @@ from core.general.agent.Assistant import Assistant
 from core.ui.components.general import ASCIIDrawer
 from core.ui.components.modal import ConfirmDeleteDialogModal, RenameDialogModal
 from core.ui.components.sidebar import DialogSidebar
-from core.types.chat import ChatDialog, ChatEntry
+from core.types.chat import ChatEntry, ChatDialog
+from core.stores import DialogStore
 
 from core.ui.components.chat import ChatBubble
 from core.ui.components.chat.CommandPalette import CommandPalette
 from core.ui.css import APPLICATION_THEME
+
+from core.prompts.MainSystemPrompt import SYSTEM_PROMPT_BASE
 
 
 def _now_hhmm() -> str:
@@ -47,9 +50,8 @@ class CharlieChatApp(App):
     ) -> None:
         super().__init__()
         self.assistant = assistant
-        self._dialogs: dict[str, ChatDialog] = {}
-        self._active_dialog_id: Optional[str] = None
-        self._dialog_counter: int = 0
+        self._system_prompt = SYSTEM_PROMPT_BASE.format(assistant_name="Чарли")
+        self._store = DialogStore()
         self._busy: bool = False
 
     def compose(self) -> ComposeResult:
@@ -123,7 +125,23 @@ class CharlieChatApp(App):
     def _seed_dialog(self, dialog_id: str) -> None:
         self._add_banner(dialog_id)
         self._add_hint(dialog_id)
+        self._add_system_prompt(dialog_id)
         self._render_active_dialog()
+
+    def _add_system_prompt(self, dialog_id: str) -> None:
+        entry = self._store.append_entry(
+            dialog_id,
+            self._store.make_entry(
+                role="system",
+                title="System Prompt",
+                timestamp=None,
+                content=self._system_prompt,
+                bordered=False,
+                build_to_llm=True,
+                build_to_ui=False,
+            ),
+        )
+        self._mount_entry(dialog_id, entry, animate=False)
 
     def _add_banner(self, dialog_id: str) -> None:
         banner = ASCIIDrawer(text="Charlie CLI : ALPHA", fill_background=False)
@@ -132,63 +150,54 @@ class CharlieChatApp(App):
 
         entry = self._store_entry(
             dialog_id,
-            ChatEntry(
+            self._store.make_entry(
                 role="system",
                 title=None,
                 timestamp=None,
                 content=banner.content(),
                 bordered=False,
                 render_mode="markup",
+                build_to_llm=False,
+                build_to_ui=True,
             ),
         )
-
-        if dialog_id == self._active_dialog_id:
-            self._chat_scroll.mount(self._build_bubble(entry))
+        self._mount_entry(dialog_id, entry, animate=False)
 
     def _add_hint(self, dialog_id: str) -> None:
         entry = self._store_entry(
             dialog_id,
-            ChatEntry(
+            self._store.make_entry(
                 role="system",
                 title=None,
                 timestamp=None,
                 content="Начните диалог: введите текст снизу и нажмите **Enter**.",
-                bordered=True,
-                render_mode="markdown",
+                build_to_llm=False,
+                build_to_ui=True,
             ),
         )
-
-        if dialog_id == self._active_dialog_id:
-            self._chat_scroll.mount(self._build_bubble(entry))
+        self._mount_entry(dialog_id, entry, animate=False)
 
     def _create_dialog(self, *, title: Optional[str] = None, make_active: bool = False) -> ChatDialog:
-        self._dialog_counter += 1
-        dialog_id = f"dialog-{self._dialog_counter}"
-        dialog_title = title or f"Диалог {self._dialog_counter}"
-        dialog: ChatDialog = {"id": dialog_id, "title": dialog_title, "messages": []}
-        self._dialogs[dialog_id] = dialog
-
-        self._sidebar.add_dialog(dialog_id=dialog_id, title=dialog_title)
-
+        dialog = self._store.create_dialog(title=title, make_active=make_active)
+        self._sidebar.add_dialog(dialog_id=dialog["id"], title=dialog["title"])
         if make_active:
-            self._set_active_dialog(dialog_id)
+            self._set_active_dialog(dialog["id"])
         return dialog
 
     def _set_active_dialog(self, dialog_id: str) -> None:
-        if dialog_id == self._active_dialog_id:
-            return
-        self._active_dialog_id = dialog_id
-
+        self._store.set_active(dialog_id)
         self._sidebar.set_active(dialog_id=dialog_id)
-
         self._render_active_dialog()
 
     def _render_active_dialog(self) -> None:
-        if not self._active_dialog_id:
+        active_id = self._store.active_dialog_id
+        if not active_id:
             return
 
         self._clear_chat_scroll()
-        for entry in self._dialogs[self._active_dialog_id]["messages"]:
+        for entry in self._store.list_entries(active_id):
+            if not entry.get("build_to_ui", True):
+                continue
             self._chat_scroll.mount(self._build_bubble(entry))
         self._chat_scroll.scroll_end(animate=False)
 
@@ -196,9 +205,31 @@ class CharlieChatApp(App):
         for child in list(self._chat_scroll.children):
             child.remove()
 
-    def _store_entry(self, dialog_id: str, entry: ChatEntry) -> ChatEntry:
-        self._dialogs[dialog_id]["messages"].append(entry)
-        return entry
+    def _store_entry(
+        self,
+        dialog_id: str,
+        entry: ChatEntry,
+        build_to_llm: bool | None = None,
+        build_to_ui: bool | None = None,
+    ) -> ChatEntry:
+        return self._store.append_entry(
+            dialog_id,
+            entry,
+            build_to_llm=build_to_llm,
+            build_to_ui=build_to_ui,
+        )
+
+    def _should_mount_entry(self, dialog_id: str, entry: ChatEntry) -> bool:
+        if dialog_id != self._store.active_dialog_id:
+            return False
+        return bool(entry.get("build_to_ui", True))
+
+    def _mount_entry(self, dialog_id: str, entry: ChatEntry, *, animate: bool = False) -> None:
+        if not self._should_mount_entry(dialog_id, entry):
+            return
+        bubble = self._build_bubble(entry)
+        self._chat_scroll.mount(bubble)
+        self._chat_scroll.scroll_end(animate=animate)
 
     def _build_bubble(self, entry: ChatEntry) -> ChatBubble:
         classes = ["bubble"]
@@ -274,20 +305,17 @@ class CharlieChatApp(App):
     def _append_system(self, dialog_id: str, content: str | Text) -> None:
         entry = self._store_entry(
             dialog_id,
-            ChatEntry(
+            self._store.make_entry(
                 role="system",
                 title="Команда",
                 timestamp=_now_hhmm(),
                 content=content,
-                bordered=True,
                 render_mode="markdown" if isinstance(content, str) else "markup",
+                build_to_llm=False,
+                build_to_ui=True,
             ),
         )
-
-        if dialog_id == self._active_dialog_id:
-            bubble = self._build_bubble(entry)
-            self._chat_scroll.mount(bubble)
-            self._chat_scroll.scroll_end(animate=False)
+        self._mount_entry(dialog_id, entry, animate=False)
 
     def _try_run_command(self, *, dialog_id: str, text: str) -> bool:
         raw = (text or "").strip()
@@ -322,36 +350,34 @@ class CharlieChatApp(App):
     def _append_user(self, dialog_id: str, content: str) -> None:
         entry = self._store_entry(
             dialog_id,
-            ChatEntry(
+            self._store.make_entry(
                 role="user",
                 title="Вы",
                 timestamp=_now_hhmm(),
                 content=content,
-                bordered=True,
-                render_mode="markdown",
+                build_to_llm=True,
+                build_to_ui=True,
             ),
+            True,
         )
-
-        if dialog_id == self._active_dialog_id:
-            bubble = self._build_bubble(entry)
-            self._chat_scroll.mount(bubble)
-            self._chat_scroll.scroll_end(animate=True)
+        self._mount_entry(dialog_id, entry, animate=True)
 
     def _append_ai_placeholder(self, dialog_id: str) -> tuple[ChatBubble, ChatEntry]:
         entry = self._store_entry(
             dialog_id,
-            ChatEntry(
+            self._store.make_entry(
                 role="assistant",
                 title=self.assistant.provider.model_name,
                 timestamp=_now_hhmm(),
                 content="",
-                bordered=True,
-                render_mode="markdown",
+                build_to_llm=True,
+                build_to_ui=True,
             ),
+            True,
         )
 
         bubble = self._build_bubble(entry)
-        if dialog_id == self._active_dialog_id:
+        if self._should_mount_entry(dialog_id, entry):
             self._chat_scroll.mount(bubble)
             self._chat_scroll.scroll_end(animate=False)
 
@@ -390,7 +416,7 @@ class CharlieChatApp(App):
             tool_events.append(ev)
             update_tools_view()
 
-        messages = self._build_llm_messages(dialog_id)
+        messages = self._store.build_llm_messages(dialog_id)
 
         def run_sync_stream() -> str:
             nonlocal accumulated
@@ -420,35 +446,13 @@ class CharlieChatApp(App):
             entry["content"] += error_text
             bubble.append_text(error_text)
 
-    def _build_llm_messages(self, dialog_id: str) -> ResponseInputParam:
-        dialog = self._dialogs.get(dialog_id)
-        if not dialog:
-            return []
-
-        messages: ResponseInputParam = []
-        for entry in dialog["messages"]:
-            role = entry.get("role")
-            if role not in {"user", "assistant"}:
-                continue
-            content = entry.get("content", "")
-            if isinstance(content, Text):
-                content_str = content.plain
-            else:
-                content_str = str(content or "")
-            if role == "assistant" and not content_str.strip():
-                continue
-            if role == "user":
-                messages.append({"role": "user", "content": content_str})
-            else:
-                messages.append({"role": "assistant", "content": content_str})
-
-        return messages
-
     def _ensure_active_dialog(self) -> str:
-        if self._active_dialog_id is None:
+        active_id = self._store.active_dialog_id
+        if active_id is None:
             dialog = self._create_dialog(title="Диалог", make_active=True)
             self._seed_dialog(dialog_id=dialog["id"])
-        return self._active_dialog_id or ""
+            return dialog["id"]
+        return active_id
 
     def action_toggle_sidebar(self) -> None:
         sidebar = self.query_one("#sidebar", Container)
@@ -464,10 +468,11 @@ class CharlieChatApp(App):
     def action_rename_dialog(self) -> None:
         if self._busy:
             return
-        dialog_id = self._active_dialog_id
-        if not dialog_id or dialog_id not in self._dialogs:
+        dialog_id = self._store.active_dialog_id
+        dialog = self._store.get_dialog(dialog_id or "")
+        if not dialog_id or not dialog:
             return
-        current_title = self._dialogs[dialog_id]["title"]
+        current_title = dialog["title"]
 
         def _done(result: Optional[str]) -> None:
             if not result:
@@ -477,16 +482,19 @@ class CharlieChatApp(App):
         self.push_screen(RenameDialogModal(current_title=current_title), _done)
 
     def _rename_dialog(self, dialog_id: str, title: str) -> None:
-        self._dialogs[dialog_id]["title"] = title
+        self._store.rename_dialog(dialog_id, title)
         self._sidebar.rename_dialog(dialog_id=dialog_id, title=title)
 
     def action_delete_dialog(self) -> None:
         if self._busy:
             return
-        dialog_id = self._active_dialog_id
-        if not dialog_id or dialog_id not in self._dialogs:
+        dialog_id = self._store.active_dialog_id
+        if not dialog_id:
             return
-        title = self._dialogs[dialog_id]["title"]
+        dialog = self._store.get_dialog(dialog_id)
+        if not dialog:
+            return
+        title = dialog["title"]
 
         def _done(confirmed: bool | None) -> None:
             if confirmed is True:
@@ -495,12 +503,9 @@ class CharlieChatApp(App):
         self.push_screen(ConfirmDeleteDialogModal(title=title), _done)
 
     def _delete_dialog(self, dialog_id: str) -> None:
-        if dialog_id not in self._dialogs:
-            return
-        del self._dialogs[dialog_id]
+        next_id = self._store.delete_dialog(dialog_id)
         self._sidebar.remove_dialog(dialog_id=dialog_id)
 
-        next_id = next(iter(self._dialogs.keys()), None)
         if next_id is None:
             dialog = self._create_dialog(title="Диалог 1", make_active=True)
             self._seed_dialog(dialog_id=dialog["id"])
