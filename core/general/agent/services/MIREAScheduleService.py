@@ -9,6 +9,7 @@ from dateutil.rrule import rrulestr
 from dateutil import tz
 
 from core.stores import CacheStore
+from core.general.Config import Config
 
 
 WEEKDAYS_RU = {
@@ -25,48 +26,28 @@ WEEKDAYS_RU = {
 class MIREAScheduleService:
     def __init__(self) -> None:
         self._cache = CacheStore()
-        self._local_tz = tz.gettz("Europe/Moscow")
+        self._local_tz = tz.gettz(Config.ASSISTANT_TIMEZONE)
 
     def fetch_schedule(self, *, url: str, ttl_seconds: int, target_date: str | None = None) -> dict[str, Any]:
         key = self._build_cache_key(url=url, target_date=target_date)
-        cached = self._cache.get(key)
-        if self._is_cache_valid(cached, ttl_seconds):
-            return cached["data"]
+        cached = self._cache.get_valid(key, ttl_seconds)
+        if cached is not None:
+            return cached
 
         try:
             html = self._fetch_html(url)
             ical_content = self._extract_ical_from_html(html)
             grouped = self._parse_schedule(ical_content, target_date=target_date)
-            entry = self._build_cache_entry(grouped, ttl_seconds)
-            self._cache.set(key, entry)
+            self._cache.set_with_ttl(key, grouped, ttl_seconds)
             return grouped
         except Exception as e:
-            if self._is_cache_valid(cached, ttl_seconds):
-                return cached["data"]
+            cached = self._cache.get_valid(key, ttl_seconds)
+            if cached is not None:
+                return cached
             return {"error": "schedule_fetch_failed with exception: " + str(e)}
 
     def _build_cache_key(self, *, url: str, target_date: str | None) -> str:
         return f"mirea_schedule::{url}::{target_date or 'all'}"
-
-    def _is_cache_valid(self, cached: Any, ttl_seconds: int) -> bool:
-        if not isinstance(cached, dict):
-            return False
-        if int(cached.get("ttl_seconds") or 0) != int(ttl_seconds):
-            return False
-        expires_at = cached.get("expires_at")
-        if not isinstance(expires_at, (int, float)):
-            return False
-        return datetime.now(timezone.utc).timestamp() < float(expires_at)
-
-    def _build_cache_entry(self, data: Any, ttl_seconds: int) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(seconds=int(ttl_seconds))
-        return {
-            "collected_at": int(now.timestamp()),
-            "ttl_seconds": int(ttl_seconds),
-            "expires_at": int(expires_at.timestamp()),
-            "data": data,
-        }
 
     def _fetch_html(self, url: str) -> str:
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})

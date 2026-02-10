@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Literal, Optional, cast
 
 from rich.text import Text

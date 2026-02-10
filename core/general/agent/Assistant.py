@@ -6,7 +6,6 @@ from typing import Any, Callable, Dict, Generator, List, Type, cast
 
 from openai.types.responses import ResponseInputParam 
 
-from core.general import Config
 from core.providers import OpenAIProvider, OllamaAIProvider
 from core.types.ai import (
     AIResponseChunk,
@@ -17,13 +16,7 @@ from core.types.ai import (
     AllowedAIToolTypes,
     AIProviders
 )
-from core.general.agent.tools import (
-    SystemManagementTool,
-    DockerTool,
-    MIREAScheduleTool,
-    TelegramTool,
-    WebSearchTool
-)
+
 from core.types.ai.AIAssistant import AllowedAIProviders
 
 from core.interfaces import ICommand
@@ -43,14 +36,12 @@ class Assistant:
 
         self.commands: Dict[str, ICommand] = {}
 
-        self.tools_classes: List[Type[ToolClassProtocol]] = [
-            SystemManagementTool,
-            DockerTool,
-            MIREAScheduleTool,
-            TelegramTool,
-            WebSearchTool,
-        ]
+        self.tools_classes: List[Type[ToolClassProtocol]] = []
         self._tool_handlers: Dict[str, Callable[..., Any]] = {}
+
+    def with_tools(self, tools_classes: List[Type[ToolClassProtocol]]):
+        self.tools_classes = tools_classes
+        return self
 
     def with_commands(self, commands: Dict[str, ICommand]):
         self.commands = dict(commands or {})
@@ -59,13 +50,6 @@ class Assistant:
     def with_provider(self, provider_id: AllowedAIProviders):
         selected_provider_meta = self.providers[provider_id]
         self.provider = selected_provider_meta[1]() # type: ignore
-
-        if provider_id == 'openrouter':
-            self.tools = [
-                {
-                    'type': 'web_search_preview'
-                }
-            ]
 
         self.load_tools(selected_provider_meta[2])
 
