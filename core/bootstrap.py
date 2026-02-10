@@ -6,24 +6,26 @@ from core.general.agent.tools import (
     DockerTool,
     MIREAScheduleTool,
     TelegramTool,
-    WebSearchTool
+    WebSearchTool,
+    RulesHelperTool
 )
 
 
 assistant = (
     Assistant()
-    .with_provider('ollama')
-    .with_model('gpt-oss:20b')
     .with_tools([
         SystemManagementTool,
         DockerTool,
         MIREAScheduleTool,
         TelegramTool,
-        WebSearchTool
+        WebSearchTool,
+        RulesHelperTool
     ])
     .with_commands({
         "skills": SkillsInfoCommand(),
     })
+    .with_provider('ollama')
+    .with_model('gpt-oss:20b')
 )
 
 __all__ = [

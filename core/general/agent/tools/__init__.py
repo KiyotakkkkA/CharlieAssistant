@@ -3,6 +3,7 @@ from core.general.agent.tools.DockerTool import DockerTool
 from core.general.agent.tools.MIREAScheduleTool import MIREAScheduleTool
 from core.general.agent.tools.TelegramTool import TelegramTool
 from core.general.agent.tools.WebSearchTool import WebSearchTool
+from core.general.agent.tools.RulesHelperTool import RulesHelperTool
 
 __all__ = [
     "SystemManagementTool",
@@ -10,4 +11,5 @@ __all__ = [
     "MIREAScheduleTool",
     "TelegramTool",
     "WebSearchTool",
+    "RulesHelperTool"
 ]
